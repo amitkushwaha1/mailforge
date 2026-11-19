@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Secrets & runtime data — NEVER commit
+send-log.txt
+state.json
+.env
+*.env
+
+# OS / editor
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
