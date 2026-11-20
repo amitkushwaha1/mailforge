@@ -5,10 +5,40 @@ const path = require("path");
 const crypto = require("crypto");
 const dns = require("dns").promises;
 
-const PORT = 3456;
+const PORT = process.env.PORT || 3456;
 const LOG_FILE = path.join(__dirname, "send-log.txt");
 const STATE_FILE = path.join(__dirname, "state.json");
 const VERSION = "3.0";
+
+// ---------- auth (password gate for public hosting) ----------
+// APP_PASSWORD empty = local mode, no login (safe on your own PC).
+// On Render (RENDER env set) APP_PASSWORD is mandatory — refuse to start without it.
+const APP_PASSWORD = process.env.APP_PASSWORD || "";
+const ON_RENDER = !!process.env.RENDER;
+if (ON_RENDER && !APP_PASSWORD) {
+  console.error("  FATAL: APP_PASSWORD env var is required when deployed. Set it in Render dashboard.");
+  process.exit(1);
+}
+const SESSION_MAC = crypto.createHmac("sha256", APP_PASSWORD || "local-no-auth")
+  .update("mailforge-session-v1").digest("hex");
+const IS_HTTPS = (h) => (h["x-forwarded-proto"] || "").includes("https");
+
+function cookieStr(req) {
+  return Object.fromEntries(
+    (req.headers.cookie || "").split(";").map((c) => c.trim()).filter(Boolean)
+      .map((c) => { const i = c.indexOf("="); return i < 0 ? [c, ""] : [c.slice(0, i), c.slice(i + 1)]; })
+  );
+}
+function isAuthed(req) {
+  if (!APP_PASSWORD) return true;
+  const given = cookieStr(req).mf_session || "";
+  const a = Buffer.from(given), b = Buffer.from(SESSION_MAC);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+function checkPassword(given) {
+  const a = Buffer.from(String(given || "")), b = Buffer.from(APP_PASSWORD);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 
 // ---------- state (daily counter) ----------
 function readState() {
@@ -382,6 +412,7 @@ function page({ title, body, script = "" }) {
   <nav>
     <a href="/" class="${title === "Dashboard" ? "on" : ""}">Dashboard</a>
     <a href="/log" class="${title === "Send Log" ? "on" : ""}">Reports &amp; Log</a>
+    ${APP_PASSWORD ? '<a href="/logout" title="Lock">🔒</a>' : ""}
   </nav>
 </header>
 <main>${body}</main>
@@ -787,11 +818,102 @@ function logPage() {
   return page({ title: "Send Log", body });
 }
 
+// ---------- login page (shown when password gate is on) ----------
+function loginPage(err) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · MailForge</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --brand:#5b5bd6; --brand-2:#7c6cf5; --ink:#17203a; --muted:#667085; --line:#e6e9f2; --err:#e5484d; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; font-family:"Inter",system-ui,sans-serif;
+    background:radial-gradient(800px 400px at 20% -10%, #e9e7ff 0%, transparent 60%),
+               radial-gradient(700px 400px at 90% 110%, #dff3ff 0%, transparent 55%), #f4f6fb; color:var(--ink); }
+  .card { background:#fff; border:1px solid var(--line); border-radius:18px; padding:38px 34px; width:100%;
+    max-width:400px; margin:20px; box-shadow:0 12px 40px rgba(23,32,58,.09); }
+  .logo { width:52px; height:52px; border-radius:14px; display:grid; place-items:center; font-size:24px;
+    background:linear-gradient(135deg,var(--brand),var(--brand-2)); box-shadow:0 8px 22px rgba(91,91,214,.35);
+    margin-bottom:18px; }
+  h1 { margin:0 0 6px; font-size:23px; letter-spacing:-.4px; }
+  p.sub { margin:0 0 26px; color:var(--muted); font-size:14px; line-height:1.6; }
+  label { display:block; font-size:12.5px; font-weight:600; color:#475467; margin-bottom:7px; }
+  input { width:100%; padding:13px 15px; border:1.5px solid var(--line); border-radius:11px; font-size:15px;
+    background:#fbfcff; outline:none; transition:.15s; font-family:inherit; }
+  input:focus { border-color:var(--brand); box-shadow:0 0 0 4px rgba(91,91,214,.13); background:#fff; }
+  button { margin-top:20px; width:100%; padding:14px; border:0; border-radius:11px; cursor:pointer;
+    background:linear-gradient(135deg,var(--brand),var(--brand-2)); color:#fff; font-size:15.5px; font-weight:700;
+    font-family:inherit; box-shadow:0 8px 22px rgba(91,91,214,.3); }
+  button:hover { filter:brightness(1.06); }
+  .err { margin-top:16px; background:#fdecec; border:1.5px solid #f6c6c8; color:#b3261e; border-radius:10px;
+    padding:12px 14px; font-size:13.5px; display:${err ? "block" : "none"}; }
+  .foot { text-align:center; color:var(--muted); font-size:11.5px; margin-top:22px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">🛡️</div>
+    <h1>MailForge</h1>
+    <p class="sub">Private bulk mailer — enter the access password to continue.</p>
+    <form method="POST" action="/login">
+      <label for="pw">Access Password</label>
+      <input type="password" id="pw" name="password" placeholder="••••••••" autofocus required>
+      <button type="submit">Unlock →</button>
+    </form>
+    <div class="err">❌ Wrong password — try again.</div>
+    <div class="foot">Runs on your server · Gmail SMTP via App Password</div>
+  </div>
+</body>
+</html>`;
+}
+
 // ---------- server ----------
 let sending = false;
 
 const server = http.createServer(async (req, res) => {
   const pathname = new URL(req.url, "http://localhost").pathname;
+
+  // --- password gate ---
+  if (APP_PASSWORD) {
+    if (pathname === "/login") {
+      if (req.method === "GET") {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(loginPage(false));
+        return;
+      }
+      if (req.method === "POST") {
+        let b = "";
+        req.on("data", (c) => (b += c));
+        req.on("end", () => {
+          const params = new URLSearchParams(b);
+          if (checkPassword(params.get("password"))) {
+            res.writeHead(302, {
+              "Set-Cookie": `mf_session=${SESSION_MAC}; HttpOnly; Path=/; Max-Age=2592000; SameSite=Lax${IS_HTTPS(req.headers) ? "; Secure" : ""}`,
+              Location: "/",
+            });
+            res.end();
+          } else {
+            res.writeHead(401, { "Content-Type": "text/html; charset=utf-8" });
+            res.end(loginPage(true));
+          }
+        });
+        return;
+      }
+    }
+    if (pathname === "/logout") {
+      res.writeHead(302, { "Set-Cookie": "mf_session=; HttpOnly; Path=/; Max-Age=0", Location: "/login" });
+      res.end();
+      return;
+    }
+    if (!isAuthed(req)) {
+      res.writeHead(401, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(loginPage(false));
+      return;
+    }
+  }
 
   if (req.method === "GET") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
@@ -980,6 +1102,9 @@ function json(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`\n  MailForge ${VERSION} running -> http://localhost:${PORT}\n`);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`\n  MailForge ${VERSION} running -> http://localhost:${PORT}`);
+  if (APP_PASSWORD) console.log(`  🔒 Password gate: ON${ON_RENDER ? " (public deploy)" : ""}`);
+  else console.log(`  ⚠️  Password gate: OFF (local mode — set APP_PASSWORD to enable)`);
+  console.log("");
 });

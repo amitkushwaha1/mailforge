@@ -6,6 +6,7 @@ send-log.txt
 state.json
 .env
 *.env
+.mailforge-password.txt
 
 # OS / editor
 Thumbs.db

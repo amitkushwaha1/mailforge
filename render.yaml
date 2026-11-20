@@ -1,0 +1,14 @@
+# Render.com deployment config for MailForge
+services:
+  - type: web
+    name: mailforge
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /login
+    envVars:
+      # REQUIRED — the password people must enter to use your deployed tool.
+      # Set this in the Render dashboard (Environment tab) — do NOT commit a real password here.
+      - key: APP_PASSWORD
+        sync: false
