@@ -35,13 +35,29 @@
 ## 🚀 Quick start
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/mailforge.git
+git clone https://github.com/amitkushwaha1/mailforge.git
 cd mailforge
 npm install
 npm start
 ```
 
 Open **http://localhost:3456** and you're in.
+
+### 🌐 Run it "live" from your own PC (free, no hosting needed)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File start-live.ps1
+```
+
+Starts the server **with the password gate** plus a free Cloudflare quick
+tunnel, giving you a public `https://….trycloudflare.com` URL (saved to
+`live-url.txt`) — open it from your phone or any browser. A shortcut in the
+Windows Startup folder brings everything back automatically at sign-in.
+
+> **Note:** the tunnel sends through *your* machine, so Gmail SMTP works
+> normally (many free hosts block outbound SMTP ports 25/465/587). Your PC
+> must be on; the URL changes on each restart (check `live-url.txt`).
+
 
 ### Getting a Gmail App Password
 

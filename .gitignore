@@ -18,3 +18,9 @@ Desktop.ini
 # Logs
 *.log
 npm-debug.log*
+
+# Local tunnel (not part of the app)
+cloudflared.exe
+live-url.txt
+tunnel.log
+tunnel-err.log
