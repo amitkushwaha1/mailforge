@@ -43,20 +43,19 @@ npm start
 
 Open **http://localhost:3456** and you're in.
 
-### 🌐 Run it "live" from your own PC (free, no hosting needed)
+### 🌐 Permanent live URL (Tailscale Funnel — free, never changes)
 
-```powershell
-powershell -ExecutionPolicy Bypass -File start-live.ps1
-```
+1. Install [Tailscale](https://tailscale.com/download) (free account, no credit card) and log in
+2. Run `tailscale funnel --bg 3456`
+3. You get a fixed public URL like `https://your-machine.your-tailnet.ts.net` — save it, it never changes
 
-Starts the server **with the password gate** plus a free Cloudflare quick
-tunnel, giving you a public `https://….trycloudflare.com` URL (saved to
-`live-url.txt`) — open it from your phone or any browser. A shortcut in the
-Windows Startup folder brings everything back automatically at sign-in.
+Or just run the launcher, which starts the server **with the password gate**
+and re-ensures the funnel; the current URL is kept in `live-url.txt`.
+A shortcut in the Windows Startup folder brings everything back at sign-in.
 
 > **Note:** the tunnel sends through *your* machine, so Gmail SMTP works
 > normally (many free hosts block outbound SMTP ports 25/465/587). Your PC
-> must be on; the URL changes on each restart (check `live-url.txt`).
+> must be on.
 
 
 ### Getting a Gmail App Password
